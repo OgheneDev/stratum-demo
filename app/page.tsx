@@ -508,9 +508,18 @@ export default function DashboardPage() {
   // ─── Render ───────────────────────────────────────────────────────────────
 
   return (
-    <div className="h-screen flex flex-col bg-[#080c14] overflow-hidden">
+    <div
+      className="flex flex-col bg-[#080c14] overflow-hidden"
+      style={{ height: "100dvh" }}
+    >
       {/* ── Top bar ─────────────────────────────────────────────────────── */}
-      <header className="shrink-0 flex items-center justify-between px-3 sm:px-4 h-11 border-b border-white/6 bg-[#080c14]/95 backdrop-blur-sm z-20">
+      <header
+        className="shrink-0 flex items-center justify-between px-3 sm:px-4 border-b border-white/6 bg-[#080c14]/95 backdrop-blur-sm z-20"
+        style={{
+          height: "calc(2.75rem + env(safe-area-inset-top))",
+          paddingTop: "env(safe-area-inset-top)",
+        }}
+      >
         {/* Left */}
         <div className="flex items-center gap-2 sm:gap-4 min-w-0">
           {/* Logo */}

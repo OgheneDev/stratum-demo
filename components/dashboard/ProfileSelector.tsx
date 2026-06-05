@@ -86,7 +86,7 @@ export function ProfileSelector({ active, onChange, loading }: Props) {
                 </span>
               )}
               {/* Label — hidden on very small screens to save space */}
-              <span className="hidden xs:inline sm:inline">{p.label}</span>
+              <span className="hidden sm:inline">{p.label}</span>
               {/* Fallback: just icon on tiny screens */}
             </button>
           );
