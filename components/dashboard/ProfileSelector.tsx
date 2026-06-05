@@ -25,7 +25,7 @@ const INDUSTRY_CONFIG: Record<
   Aviation: {
     icon: <Plane size={11} />,
     color: "text-sky-400",
-    glow: "shadow-[0_0_12px_rgba(56,189,248,0.25)]",
+    glow: "shadow-[0_0_12px_rgba(56,189,248,0.2)]",
     activeBg: "bg-sky-500/10",
     activeText: "text-sky-300",
     activeBorder: "border-sky-500/40",
@@ -33,7 +33,7 @@ const INDUSTRY_CONFIG: Record<
   Logistics: {
     icon: <Package size={11} />,
     color: "text-emerald-400",
-    glow: "shadow-[0_0_12px_rgba(52,211,153,0.25)]",
+    glow: "shadow-[0_0_12px_rgba(52,211,153,0.2)]",
     activeBg: "bg-emerald-500/10",
     activeText: "text-emerald-300",
     activeBorder: "border-emerald-500/40",
@@ -41,7 +41,7 @@ const INDUSTRY_CONFIG: Record<
   Healthcare: {
     icon: <Stethoscope size={11} />,
     color: "text-rose-400",
-    glow: "shadow-[0_0_12px_rgba(248,113,113,0.25)]",
+    glow: "shadow-[0_0_12px_rgba(248,113,113,0.2)]",
     activeBg: "bg-rose-500/10",
     activeText: "text-rose-300",
     activeBorder: "border-rose-500/40",
@@ -50,12 +50,11 @@ const INDUSTRY_CONFIG: Record<
 
 export function ProfileSelector({ active, onChange, loading }: Props) {
   return (
-    <div className="flex items-center gap-3">
-      <span className="font-mono text-[9px] text-slate-600 uppercase tracking-[0.15em] hidden sm:block">
+    <div className="flex items-center gap-2 sm:gap-3">
+      <span className="font-mono text-[9px] text-slate-600 uppercase tracking-[0.15em] hidden md:block">
         workspace
       </span>
-
-      <div className="flex gap-1.5">
+      <div className="flex gap-1 sm:gap-1.5">
         {PROFILES.map((p) => {
           const cfg = INDUSTRY_CONFIG[p.industry] ?? {
             icon: null,
@@ -66,15 +65,13 @@ export function ProfileSelector({ active, onChange, loading }: Props) {
             activeBorder: "border-slate-600",
           };
           const isActive = active.id === p.id;
-
           return (
             <button
               key={p.id}
               onClick={() => !loading && onChange(p)}
               disabled={loading}
               className={clsx(
-                "relative flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[11px] font-medium transition-all duration-200 border",
-                "font-sans",
+                "relative flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-md text-[11px] font-medium transition-all duration-200 border font-sans",
                 isActive
                   ? [cfg.activeBg, cfg.activeText, cfg.activeBorder, cfg.glow]
                   : "bg-transparent border-white/5 text-slate-500 hover:text-slate-300 hover:border-white/10 hover:bg-white/[0.03]",
@@ -88,10 +85,9 @@ export function ProfileSelector({ active, onChange, loading }: Props) {
                   {cfg.icon}
                 </span>
               )}
-              {p.label}
-              {isActive && (
-                <span className="absolute -top-px -right-px w-1.5 h-1.5 rounded-full bg-current opacity-60" />
-              )}
+              {/* Label — hidden on very small screens to save space */}
+              <span className="hidden xs:inline sm:inline">{p.label}</span>
+              {/* Fallback: just icon on tiny screens */}
             </button>
           );
         })}

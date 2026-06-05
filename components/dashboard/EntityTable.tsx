@@ -112,14 +112,9 @@ export function EntityTable({
   availableTransitions,
 }: Props) {
   const isAlice = actor === "alice";
-
   const accentText = isAlice ? "text-sky-400" : "text-violet-400";
   const accentBg = isAlice ? "bg-sky-500/10" : "bg-violet-500/10";
   const accentBorder = isAlice ? "border-sky-500/25" : "border-violet-500/25";
-  const accentGlow = isAlice
-    ? "shadow-[0_0_20px_rgba(56,189,248,0.08)]"
-    : "shadow-[0_0_20px_rgba(167,139,250,0.08)]";
-  const dotColor = isAlice ? "bg-sky-400" : "bg-violet-400";
   const mutateHover = isAlice
     ? "hover:bg-sky-500/10 hover:border-sky-500/30 hover:text-sky-300"
     : "hover:bg-violet-500/10 hover:border-violet-500/30 hover:text-violet-300";
@@ -127,13 +122,8 @@ export function EntityTable({
   return (
     <div className="flex flex-col h-full">
       {/* Column header */}
-      <div
-        className={clsx(
-          "flex items-center justify-between px-4 py-2.5 border-b border-white/[0.05]",
-          accentGlow,
-        )}
-      >
-        <div className="flex items-center gap-2.5">
+      <div className="flex items-center justify-between px-3 sm:px-4 py-2.5 border-b border-white/[0.05]">
+        <div className="flex items-center gap-2">
           <div
             className={clsx(
               "flex items-center justify-center w-5 h-5 rounded-md border",
@@ -161,10 +151,11 @@ export function EntityTable({
             </span>
           </div>
         </div>
-
         <div className="flex items-center gap-1.5">
           <Wifi size={9} className="text-emerald-400 animate-pulse-slow" />
-          <span className="font-mono text-[9px] text-slate-600">live</span>
+          <span className="font-mono text-[9px] text-slate-600 hidden sm:block">
+            live
+          </span>
         </div>
       </div>
 
@@ -173,16 +164,17 @@ export function EntityTable({
         {loading && (
           <div className="p-3 space-y-2">
             {[...Array(3)].map((_, i) => (
-              <div key={i} className="h-[72px] rounded-lg shimmer" />
+              <div
+                key={i}
+                className="h-[68px] sm:h-[72px] rounded-lg shimmer"
+              />
             ))}
           </div>
         )}
 
         {!loading && entities.length === 0 && (
           <div className="flex flex-col items-center gap-2 py-10 text-center px-4">
-            <div className="w-8 h-8 rounded-full bg-white/[0.03] flex items-center justify-center">
-              <span className="font-mono text-slate-600 text-sm">∅</span>
-            </div>
+            <span className="font-mono text-slate-600 text-2xl">∅</span>
             <p className="font-sans text-xs text-slate-600">No entities</p>
           </div>
         )}
@@ -201,13 +193,13 @@ export function EntityTable({
               <div
                 key={entity.id}
                 className={clsx(
-                  "group relative px-4 py-3 transition-all duration-300",
+                  "group relative px-3 sm:px-4 py-3 transition-all duration-300",
                   isWinner && "bg-emerald-950/25",
                   isLoser && "bg-rose-950/25 collision-flash",
                   !isCollisionTarget && "hover:bg-white/[0.02]",
                 )}
               >
-                {/* Left accent bar */}
+                {/* Left accent bar on collision */}
                 {isCollisionTarget && (
                   <span
                     className={clsx(
@@ -217,11 +209,10 @@ export function EntityTable({
                   />
                 )}
 
-                <div className="flex items-start justify-between gap-3">
+                <div className="flex items-start justify-between gap-2">
                   {/* Entity info */}
                   <div className="min-w-0 flex-1">
-                    {/* ID + state row */}
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap">
                       <span
                         className={clsx(
                           "w-1.5 h-1.5 rounded-full flex-shrink-0",
@@ -247,21 +238,20 @@ export function EntityTable({
                       </span>
                     </div>
 
-                    {/* Version + type */}
-                    <div className="mt-1 ml-3.5 flex items-center gap-2">
+                    <div className="mt-1 ml-3 flex items-center gap-1.5 sm:gap-2">
                       <span className="font-mono text-[9px] text-slate-700">
                         v{entity.version}
                       </span>
-                      <span className="w-px h-2.5 bg-white/[0.06]" />
+                      <span className="w-px h-2 bg-white/[0.06]" />
                       <span className="font-mono text-[9px] text-slate-700">
                         {entity.entityType}
                       </span>
                     </div>
 
-                    {/* Attributes */}
-                    <div className="mt-1.5 ml-3.5 flex flex-wrap gap-x-3 gap-y-0.5">
+                    {/* Attributes — slightly fewer on mobile */}
+                    <div className="mt-1 ml-3 flex flex-wrap gap-x-2 sm:gap-x-3 gap-y-0.5">
                       {Object.entries(entity.attributes)
-                        .slice(0, 3)
+                        .slice(0, 2)
                         .map(([k, v]) => (
                           <span
                             key={k}
@@ -274,35 +264,35 @@ export function EntityTable({
                     </div>
                   </div>
 
-                  {/* Right side */}
-                  <div className="flex-shrink-0 flex items-start gap-2">
-                    {/* Collision outcome badge */}
+                  {/* Right: badge or mutate button */}
+                  <div className="flex-shrink-0 flex items-center gap-1.5">
                     {isWinner && (
                       <span className="animate-fade-in flex items-center gap-1 font-mono text-[9px] px-2 py-1 bg-emerald-900/40 text-emerald-400 rounded-md border border-emerald-500/25">
                         <CheckCircle2 size={9} />
-                        committed
+                        <span className="hidden sm:inline">committed</span>
                       </span>
                     )}
                     {isLoser && (
                       <span className="animate-fade-in flex items-center gap-1 font-mono text-[9px] px-2 py-1 bg-rose-900/40 text-rose-400 rounded-md border border-rose-500/25">
                         <XCircle size={9} />
-                        rejected
+                        <span className="hidden sm:inline">rejected</span>
                       </span>
                     )}
 
-                    {/* Mutate button */}
+                    {/* Mutate button — always visible on mobile (no hover), hover-only on desktop */}
                     {hasNext && !isCollisionTarget && (
                       <button
                         onClick={() => onMutate(entity)}
                         className={clsx(
-                          "opacity-0 group-hover:opacity-100 transition-all duration-150",
-                          "flex items-center gap-1 font-mono text-[10px] px-2.5 py-1.5 rounded-md border",
+                          "flex items-center gap-1 font-mono text-[10px] px-2 py-1.5 rounded-md border transition-all duration-150",
                           "bg-white/[0.03] border-white/[0.08] text-slate-500",
+                          // Always visible on touch, hover-reveal on desktop
+                          "sm:opacity-0 sm:group-hover:opacity-100",
                           mutateHover,
                         )}
                       >
-                        mutate
-                        <ChevronRight size={9} />
+                        <span className="hidden sm:inline">mutate</span>
+                        <ChevronRight size={10} />
                       </button>
                     )}
                   </div>

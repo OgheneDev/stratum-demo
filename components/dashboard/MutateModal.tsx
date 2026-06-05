@@ -35,8 +35,8 @@ export function MutateModal({
   const accentBg = isAlice ? "bg-sky-500/10" : "bg-violet-500/10";
   const accentBorder = isAlice ? "border-sky-500/25" : "border-violet-500/25";
   const accentGlow = isAlice
-    ? "shadow-[0_0_40px_rgba(56,189,248,0.12)]"
-    : "shadow-[0_0_40px_rgba(167,139,250,0.12)]";
+    ? "shadow-[0_0_40px_rgba(56,189,248,0.1)]"
+    : "shadow-[0_0_40px_rgba(167,139,250,0.1)]";
   const activeRuleBg = isAlice
     ? "bg-sky-500/10 border-sky-500/30"
     : "bg-violet-500/10 border-violet-500/30";
@@ -56,18 +56,28 @@ export function MutateModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-md animate-fade-in">
+    <div
+      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center sm:p-4 bg-black/60 backdrop-blur-md animate-fade-in"
+      onClick={onClose}
+    >
       <div
         className={clsx(
-          "w-full max-w-md rounded-xl border overflow-hidden",
+          "w-full sm:max-w-md rounded-t-2xl sm:rounded-xl border overflow-hidden",
           "bg-[#0d1117]",
           accentBorder,
           accentGlow,
+          // On mobile: slide up from bottom, full width
+          "animate-slide-up",
         )}
         onClick={(e) => e.stopPropagation()}
       >
+        {/* Drag handle — mobile only */}
+        <div className="sm:hidden flex justify-center pt-3 pb-1">
+          <div className="w-10 h-1 rounded-full bg-white/10" />
+        </div>
+
         {/* Header */}
-        <div className="flex items-center justify-between px-5 py-4 border-b border-white/[0.06]">
+        <div className="flex items-center justify-between px-4 sm:px-5 py-3 sm:py-4 border-b border-white/[0.06]">
           <div className="flex items-center gap-3">
             <div
               className={clsx(
@@ -106,7 +116,8 @@ export function MutateModal({
           </button>
         </div>
 
-        <div className="px-5 py-4 space-y-5">
+        {/* Body — scrollable on mobile */}
+        <div className="px-4 sm:px-5 py-4 space-y-4 max-h-[60vh] overflow-y-auto">
           {/* Transition selector */}
           <div className="space-y-2">
             <label className="flex items-center gap-1.5 font-mono text-[9px] text-slate-600 uppercase tracking-[0.1em]">
@@ -130,8 +141,8 @@ export function MutateModal({
                         : "bg-white/[0.02] border-white/[0.05] text-slate-500 hover:bg-white/[0.04] hover:border-white/[0.08]",
                     )}
                   >
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
+                    <div className="flex flex-wrap items-center justify-between gap-y-1 gap-x-2">
+                      <div className="flex items-center gap-2 min-w-0">
                         <span
                           className={
                             isSelected ? "text-slate-400" : "text-slate-600"
@@ -139,7 +150,10 @@ export function MutateModal({
                         >
                           {rule.from_state}
                         </span>
-                        <ArrowRight size={9} className="text-slate-700" />
+                        <ArrowRight
+                          size={9}
+                          className="text-slate-700 flex-shrink-0"
+                        />
                         <span
                           className={
                             isSelected ? "text-slate-100 font-medium" : ""
@@ -148,7 +162,7 @@ export function MutateModal({
                           {rule.to_state}
                         </span>
                       </div>
-                      <div className="flex gap-1">
+                      <div className="flex flex-wrap gap-1">
                         {rule.allowed_roles.map((r) => (
                           <span
                             key={r}
@@ -202,11 +216,12 @@ export function MutateModal({
                           }
                           placeholder={`${schema.type}…`}
                           className={clsx(
-                            "w-full bg-white/[0.03] border rounded-lg px-3 py-2",
+                            "w-full bg-white/[0.03] border rounded-lg px-3 py-2.5",
                             "font-mono text-xs text-slate-200 placeholder-slate-700",
-                            "transition-colors duration-150",
-                            "focus:outline-none",
+                            "transition-colors duration-150 focus:outline-none",
                             "border-white/[0.06] focus:border-white/[0.14]",
+                            // larger tap target on mobile
+                            "text-base sm:text-xs",
                           )}
                         />
                       </div>
@@ -218,7 +233,7 @@ export function MutateModal({
         </div>
 
         {/* Footer */}
-        <div className="flex items-center justify-end gap-2 px-5 py-3.5 border-t border-white/[0.06] bg-white/[0.01]">
+        <div className="flex items-center justify-end gap-2 px-4 sm:px-5 py-3.5 border-t border-white/[0.06] bg-white/[0.01]">
           <button
             onClick={onClose}
             className="font-sans text-xs px-3.5 py-2 text-slate-500 hover:text-slate-300 transition-colors rounded-lg hover:bg-white/[0.04]"

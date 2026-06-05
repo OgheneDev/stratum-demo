@@ -12,7 +12,7 @@ import type {
   TransitionRule,
   ProfileTokens,
 } from "@/types";
-import { PROFILES, DEFAULT_PROFILE } from "@/lib/profiles";
+import { DEFAULT_PROFILE } from "@/lib/profiles";
 import {
   issueToken,
   fetchActiveBlueprint,
@@ -31,12 +31,12 @@ import { CollisionSimulator } from "@/components/collision/CollisionSimulator";
 import { Terminal } from "@/components/terminal/Terminal";
 
 import {
-  Cpu,
   CheckCircle2,
   AlertCircle,
   Loader2,
-  Radio,
   GitBranch,
+  Layers,
+  X,
 } from "lucide-react";
 
 const WS_URL = process.env.NEXT_PUBLIC_WS_URL || "http://localhost:4000";
@@ -48,6 +48,13 @@ export default function DashboardPage() {
   const [blueprint, setBlueprint] = useState<BlueprintConfig | null>(null);
   const [entities, setEntities] = useState<WorkflowEntity[]>([]);
   const [logs, setLogs] = useState<LogEntry[]>([]);
+
+  // Mobile: which tab is active in the bottom nav
+  const [mobileTab, setMobileTab] = useState<"alice" | "bob" | "blueprint">(
+    "alice",
+  );
+  // Mobile: blueprint drawer open
+  const [blueprintOpen, setBlueprintOpen] = useState(false);
 
   const [mutateTarget, setMutateTarget] = useState<{
     entity: WorkflowEntity;
@@ -65,8 +72,6 @@ export default function DashboardPage() {
 
   const aliceSocketRef = useRef<Socket | null>(null);
   const bobSocketRef = useRef<Socket | null>(null);
-
-  // ─── Logs ─────────────────────────────────────────────────────────────────
 
   const addLog = useCallback((log: LogEntry) => {
     setLogs((prev) => [...prev.slice(-499), log]);
@@ -90,7 +95,6 @@ export default function DashboardPage() {
           reconnection: true,
           reconnectionDelay: 1000,
         });
-
         socket.on("connect", () =>
           addLog(
             makeLog(
@@ -145,7 +149,7 @@ export default function DashboardPage() {
           addLog(
             makeLog(
               "collision",
-              `mutation:collision received — entity: ${payload.entity_id?.slice(0, 8)}…`,
+              `mutation:collision — entity: ${payload.entity_id?.slice(0, 8)}…`,
               actor,
               `stale_version: ${payload.stale_version}`,
             ),
@@ -156,7 +160,6 @@ export default function DashboardPage() {
             makeLog("telemetry", `WebSocket disconnected: ${reason}`, actor),
           ),
         );
-
         return socket;
       }
 
@@ -208,11 +211,7 @@ export default function DashboardPage() {
         );
       } catch (err: any) {
         addLog(
-          makeLog(
-            "error",
-            `Token issuance failed: ${err.message}. Check API key and tenant registration.`,
-            "system",
-          ),
+          makeLog("error", `Token issuance failed: ${err.message}`, "system"),
         );
         setLoading(false);
         return;
@@ -413,20 +412,10 @@ export default function DashboardPage() {
     addLog(
       makeLog(
         "info",
-        `Collision race initiated — entity: ${target.id.slice(0, 8)}… v${target.version}`,
+        `Collision race — entity: ${target.id.slice(0, 8)}… v${target.version}`,
         "system",
-        `both targeting: ${availableRule.from_state} → ${availableRule.to_state}`,
+        `targeting: ${availableRule.from_state} → ${availableRule.to_state}`,
       ),
-    );
-    addLog(
-      makeLog(
-        "info",
-        `Alice payload: ${JSON.stringify(alicePayload)}`,
-        "alice",
-      ),
-    );
-    addLog(
-      makeLog("info", `Bob payload: ${JSON.stringify(bobPayload)}`, "bob"),
     );
 
     const [aliceResult, bobResult] = await Promise.all([
@@ -454,7 +443,7 @@ export default function DashboardPage() {
       addLog(
         makeLog(
           "success",
-          `Alice write committed — entity now v${aliceResult.entity?.version}`,
+          `Alice committed — v${aliceResult.entity?.version}`,
           "alice",
           `state: ${aliceResult.entity?.currentState}`,
         ),
@@ -462,9 +451,9 @@ export default function DashboardPage() {
       addLog(
         makeLog(
           "collision",
-          `Error 409: Mutation Rejected. Version mismatch detected at database row level.`,
+          `Error 409: Bob rejected — version mismatch`,
           "bob",
-          `expected v${target.version} · Bob arrived second`,
+          `expected v${target.version}`,
         ),
       );
     } else if (bobResult.success) {
@@ -473,7 +462,7 @@ export default function DashboardPage() {
       addLog(
         makeLog(
           "success",
-          `Bob write committed — entity now v${bobResult.entity?.version}`,
+          `Bob committed — v${bobResult.entity?.version}`,
           "bob",
           `state: ${bobResult.entity?.currentState}`,
         ),
@@ -481,9 +470,9 @@ export default function DashboardPage() {
       addLog(
         makeLog(
           "collision",
-          `Error 409: Mutation Rejected. Version mismatch detected at database row level.`,
+          `Error 409: Alice rejected — version mismatch`,
           "alice",
-          `expected v${target.version} · Alice arrived second`,
+          `expected v${target.version}`,
         ),
       );
     } else {
@@ -501,7 +490,7 @@ export default function DashboardPage() {
     addLog(
       makeLog(
         "telemetry",
-        `OCC barrier held — one atomic commit, one version rejection, zero dirty writes`,
+        `OCC barrier held — one atomic commit, one version rejection`,
         "system",
       ),
     );
@@ -521,15 +510,15 @@ export default function DashboardPage() {
   return (
     <div className="h-screen flex flex-col bg-[#080c14] overflow-hidden">
       {/* ── Top bar ─────────────────────────────────────────────────────── */}
-      <header className="flex-shrink-0 flex items-center justify-between px-4 py-0 h-11 border-b border-white/[0.06] bg-[#080c14]/95 backdrop-blur-sm z-20">
+      <header className="flex-shrink-0 flex items-center justify-between px-3 sm:px-4 h-11 border-b border-white/[0.06] bg-[#080c14]/95 backdrop-blur-sm z-20">
         {/* Left */}
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-2 sm:gap-4 min-w-0">
           {/* Logo */}
-          <div className="flex items-center gap-2.5">
+          <div className="flex items-center gap-2 flex-shrink-0">
             <div className="flex items-center justify-center w-7 h-7 rounded-lg bg-gradient-to-br from-indigo-500/30 to-violet-500/20 border border-indigo-500/20">
               <GitBranch size={13} className="text-indigo-400" />
             </div>
-            <div className="leading-none">
+            <div className="leading-none hidden xs:block">
               <span className="block font-sans font-bold text-sm text-slate-100 tracking-tight">
                 STRATUM
               </span>
@@ -539,52 +528,35 @@ export default function DashboardPage() {
             </div>
           </div>
 
-          <div className="w-px h-6 bg-white/[0.06]" />
+          <div className="w-px h-6 bg-white/[0.06] hidden sm:block" />
 
-          <ProfileSelector
-            active={profile}
-            onChange={handleProfileChange}
-            loading={loading}
-          />
+          {/* Profile selector — hidden on very small screens, shown from sm */}
+          <div className="hidden sm:block">
+            <ProfileSelector
+              active={profile}
+              onChange={handleProfileChange}
+              loading={loading}
+            />
+          </div>
         </div>
 
         {/* Right */}
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2">
           {/* Token status */}
-          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-white/[0.02] border border-white/[0.05]">
+          <div className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-white/[0.02] border border-white/[0.05]">
             {tokens ? (
-              <>
-                <CheckCircle2 size={10} className="text-emerald-400" />
-                <span className="font-mono text-[9px] text-slate-500">
-                  authenticated
-                </span>
-              </>
+              <CheckCircle2 size={10} className="text-emerald-400" />
             ) : loading ? (
-              <>
-                <Loader2 size={10} className="text-amber-400 animate-spin" />
-                <span className="font-mono text-[9px] text-slate-500">
-                  authenticating…
-                </span>
-              </>
+              <Loader2 size={10} className="text-amber-400 animate-spin" />
             ) : (
-              <>
-                <AlertCircle size={10} className="text-rose-400" />
-                <span className="font-mono text-[9px] text-rose-400">
-                  auth failed
-                </span>
-              </>
+              <AlertCircle size={10} className="text-rose-400" />
             )}
-          </div>
-
-          {/* Tenant / entity type */}
-          <div className="hidden md:flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-white/[0.02] border border-white/[0.05]">
-            <Cpu size={9} className="text-slate-600" />
-            <span className="font-mono text-[9px] text-slate-600">
-              {profile.tenantId}
-            </span>
-            <span className="text-slate-700">·</span>
-            <span className="font-mono text-[9px] text-slate-500">
-              {profile.entityType}
+            <span className="font-mono text-[9px] text-slate-500 hidden sm:block">
+              {tokens
+                ? "authenticated"
+                : loading
+                  ? "authenticating…"
+                  : "auth failed"}
             </span>
           </div>
 
@@ -592,19 +564,69 @@ export default function DashboardPage() {
           <div className="flex items-center gap-1.5">
             <span className="relative flex h-2 w-2">
               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-40" />
-              <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-400 status-live" />
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-400" />
             </span>
-            <span className="font-mono text-[9px] text-emerald-500/70">
+            <span className="font-mono text-[9px] text-emerald-500/70 hidden sm:block">
               live
             </span>
           </div>
+
+          {/* Blueprint drawer toggle — mobile only */}
+          <button
+            onClick={() => setBlueprintOpen(true)}
+            className="lg:hidden flex items-center justify-center w-7 h-7 rounded-md bg-white/[0.03] border border-white/[0.06] text-slate-500 hover:text-slate-300"
+          >
+            <Layers size={13} />
+          </button>
         </div>
       </header>
 
+      {/* Profile selector — mobile only, below header */}
+      <div className="sm:hidden flex-shrink-0 px-3 py-2 border-b border-white/[0.05] bg-[#0a0f1a]">
+        <ProfileSelector
+          active={profile}
+          onChange={handleProfileChange}
+          loading={loading}
+        />
+      </div>
+
       {/* ── Main ────────────────────────────────────────────────────────── */}
-      <div className="flex-1 flex min-h-0 overflow-hidden">
-        {/* Blueprint sidebar */}
-        <aside className="w-60 flex-shrink-0 border-r border-white/[0.05] flex flex-col min-h-0 overflow-hidden bg-[#0a0f1a]">
+      <div className="flex-1 flex min-h-0 overflow-hidden relative">
+        {/* Blueprint sidebar — desktop always visible, mobile as drawer */}
+        {/* Mobile backdrop */}
+        {blueprintOpen && (
+          <div
+            className="lg:hidden fixed inset-0 z-30 bg-black/60 backdrop-blur-sm"
+            onClick={() => setBlueprintOpen(false)}
+          />
+        )}
+
+        {/* Sidebar itself */}
+        <aside
+          className={[
+            "flex-col min-h-0 overflow-hidden bg-[#0a0f1a] border-r border-white/[0.05]",
+            // Desktop: always shown as sidebar
+            "lg:flex lg:relative lg:w-60 lg:z-auto lg:translate-x-0",
+            // Mobile: fixed drawer sliding in from left
+            "fixed top-0 left-0 h-full z-40 w-72 flex transition-transform duration-300",
+            blueprintOpen
+              ? "translate-x-0"
+              : "-translate-x-full lg:translate-x-0",
+          ].join(" ")}
+        >
+          {/* Mobile drawer header */}
+          <div className="lg:hidden flex items-center justify-between px-4 py-3 border-b border-white/[0.06]">
+            <span className="font-sans font-semibold text-sm text-slate-200">
+              Blueprint
+            </span>
+            <button
+              onClick={() => setBlueprintOpen(false)}
+              className="flex items-center justify-center w-7 h-7 rounded-md bg-white/[0.04] border border-white/[0.06] text-slate-500 hover:text-slate-300"
+            >
+              <X size={13} />
+            </button>
+          </div>
+
           <BlueprintInspector
             config={blueprint}
             loading={loading}
@@ -622,9 +644,8 @@ export default function DashboardPage() {
             hasEntities={entities.length > 0}
           />
 
-          {/* Dual actor columns */}
-          <div className="flex-1 flex min-h-0 overflow-hidden">
-            {/* Alice */}
+          {/* ── Desktop: side-by-side Alice / Bob columns ── */}
+          <div className="hidden md:flex flex-1 min-h-0 overflow-hidden">
             <div className="flex-1 border-r border-white/[0.05] min-h-0 flex flex-col overflow-hidden">
               <EntityTable
                 entities={entities}
@@ -638,8 +659,6 @@ export default function DashboardPage() {
                 availableTransitions={availableTransitions}
               />
             </div>
-
-            {/* Bob */}
             <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
               <EntityTable
                 entities={entities}
@@ -652,10 +671,78 @@ export default function DashboardPage() {
               />
             </div>
           </div>
+
+          {/* ── Mobile: tabbed Alice / Bob ── */}
+          <div className="flex md:hidden flex-col flex-1 min-h-0 overflow-hidden">
+            {/* Tab bar */}
+            <div className="flex-shrink-0 flex border-b border-white/[0.05]">
+              {(["alice", "bob"] as const).map((actor) => {
+                const isActive = mobileTab === actor;
+                const color =
+                  actor === "alice"
+                    ? "text-sky-400 border-sky-400"
+                    : "text-violet-400 border-violet-400";
+                const dot = actor === "alice" ? "bg-sky-400" : "bg-violet-400";
+                return (
+                  <button
+                    key={actor}
+                    onClick={() => setMobileTab(actor)}
+                    className={[
+                      "flex-1 flex items-center justify-center gap-2 py-2.5 font-sans text-xs font-medium border-b-2 transition-colors",
+                      isActive
+                        ? color
+                        : "text-slate-500 border-transparent hover:text-slate-300",
+                    ].join(" ")}
+                  >
+                    <span
+                      className={[
+                        "w-1.5 h-1.5 rounded-full",
+                        dot,
+                        isActive ? "opacity-100" : "opacity-30",
+                      ].join(" ")}
+                    />
+                    {actor === "alice" ? "Alice" : "Bob"}
+                    <span className="font-mono text-[9px] opacity-50">
+                      / dispatcher
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Active panel */}
+            <div className="flex-1 min-h-0 overflow-hidden">
+              {mobileTab === "alice" ? (
+                <EntityTable
+                  entities={entities}
+                  actor="alice"
+                  loading={loading}
+                  collisionEntityId={collisionEntityId}
+                  collisionOutcome={aliceCollisionOutcome}
+                  onMutate={(entity) =>
+                    setMutateTarget({ entity, actor: "alice" })
+                  }
+                  availableTransitions={availableTransitions}
+                />
+              ) : (
+                <EntityTable
+                  entities={entities}
+                  actor="bob"
+                  loading={loading}
+                  collisionEntityId={collisionEntityId}
+                  collisionOutcome={bobCollisionOutcome}
+                  onMutate={(entity) =>
+                    setMutateTarget({ entity, actor: "bob" })
+                  }
+                  availableTransitions={availableTransitions}
+                />
+              )}
+            </div>
+          </div>
         </main>
       </div>
 
-      {/* ── Terminal (collapsible, resizable) ───────────────────────────── */}
+      {/* ── Terminal ─────────────────────────────────────────────────────── */}
       <Terminal logs={logs} onClear={clearLogs} />
 
       {/* ── Mutate modal ─────────────────────────────────────────────────── */}
