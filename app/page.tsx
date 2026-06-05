@@ -12,7 +12,7 @@ import type {
   TransitionRule,
   ProfileTokens,
 } from "@/types";
-import { DEFAULT_PROFILE } from "@/lib/profiles";
+import { PROFILES, DEFAULT_PROFILE } from "@/lib/profiles";
 import {
   issueToken,
   fetchActiveBlueprint,
@@ -41,26 +41,40 @@ import {
 
 const WS_URL = process.env.NEXT_PUBLIC_WS_URL || "http://localhost:4000";
 
+// ─── Per-profile cached state ─────────────────────────────────────────────────
+
+interface ProfileCache {
+  tokens: ProfileTokens;
+  blueprint: BlueprintConfig;
+  entities: WorkflowEntity[];
+  aliceSocket: Socket;
+  bobSocket: Socket;
+}
+
 export default function DashboardPage() {
-  const [profile, setProfile] = useState<WorkspaceProfile>(DEFAULT_PROFILE);
-  const [tokens, setTokens] = useState<ProfileTokens | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [blueprint, setBlueprint] = useState<BlueprintConfig | null>(null);
-  const [entities, setEntities] = useState<WorkflowEntity[]>([]);
+  const [activeProfileId, setActiveProfileId] = useState<string>(
+    DEFAULT_PROFILE.id,
+  );
+  const [initializing, setInitializing] = useState(true); // true while all profiles are loading
   const [logs, setLogs] = useState<LogEntry[]>([]);
 
-  // Mobile: which tab is active in the bottom nav
-  const [mobileTab, setMobileTab] = useState<"alice" | "bob" | "blueprint">(
-    "alice",
-  );
-  // Mobile: blueprint drawer open
+  // Cache keyed by profile id — populated once on mount
+  const cacheRef = useRef<Map<string, ProfileCache>>(new Map());
+
+  // Track which profiles have finished loading
+  const [readyProfiles, setReadyProfiles] = useState<Set<string>>(new Set());
+
+  // Mobile state
+  const [mobileTab, setMobileTab] = useState<"alice" | "bob">("alice");
   const [blueprintOpen, setBlueprintOpen] = useState(false);
 
+  // Mutate modal
   const [mutateTarget, setMutateTarget] = useState<{
     entity: WorkflowEntity;
     actor: "alice" | "bob";
   } | null>(null);
 
+  // Collision state — per active profile
   const [collisionRunning, setCollisionRunning] = useState(false);
   const [aliceCollisionOutcome, setAliceCollisionOutcome] =
     useState<CollisionOutcome>("idle");
@@ -70,8 +84,11 @@ export default function DashboardPage() {
     string | undefined
   >();
 
-  const aliceSocketRef = useRef<Socket | null>(null);
-  const bobSocketRef = useRef<Socket | null>(null);
+  // ─── Entity state per profile (mutable after load) ───────────────────────
+  // We keep a separate React state map so entity updates trigger re-renders
+  const [entityMap, setEntityMap] = useState<Map<string, WorkflowEntity[]>>(
+    new Map(),
+  );
 
   const addLog = useCallback((log: LogEntry) => {
     setLogs((prev) => [...prev.slice(-499), log]);
@@ -81,237 +98,269 @@ export default function DashboardPage() {
     setLogs([]);
   }
 
-  // WebSockets
+  // ─── Build a socket for a profile ────────────────────────────────────────
 
-  const connectSockets = useCallback(
-    (p: WorkspaceProfile, aliceToken: string, bobToken: string) => {
-      aliceSocketRef.current?.disconnect();
-      bobSocketRef.current?.disconnect();
+  function makeSocket(
+    token: string,
+    actor: "alice" | "bob",
+    profileId: string,
+    tenantId: string,
+  ): Socket {
+    const socket = io(WS_URL, {
+      auth: { token },
+      transports: ["websocket"],
+      reconnection: true,
+      reconnectionDelay: 1000,
+    });
 
-      function makeSocket(token: string, actor: "alice" | "bob"): Socket {
-        const socket = io(WS_URL, {
-          auth: { token },
-          transports: ["websocket"],
-          reconnection: true,
-          reconnectionDelay: 1000,
-        });
-        socket.on("connect", () =>
-          addLog(
-            makeLog(
-              "info",
-              `WebSocket authenticated — tenant: ${p.tenantId}`,
-              actor,
-              `socket_id: ${socket.id}`,
-            ),
-          ),
-        );
-        socket.on("connect_error", (err) =>
-          addLog(
-            makeLog(
-              "error",
-              `WebSocket connection failed: ${err.message}`,
-              actor,
-            ),
-          ),
-        );
-        socket.on("entity:updated", (payload: WsEntityUpdatedPayload) => {
-          setEntities((prev) =>
-            prev.map((e) =>
-              e.id === payload.entity_id
-                ? {
-                    ...e,
-                    currentState: payload.new_state,
-                    version: payload.version,
-                    attributes: { ...e.attributes, ...payload.attributes },
-                    updatedAt: payload.timestamp,
-                  }
-                : e,
-            ),
-          );
-          addLog(
-            makeLog(
-              "success",
-              `entity:updated — ${payload.entity_id.slice(0, 8)}… ${payload.old_state} → ${payload.new_state}`,
-              actor,
-              `v${payload.version} · actor: ${payload.actor_id}`,
-            ),
-          );
-          addLog(
-            makeLog(
-              "telemetry",
-              `Redis pub/sub broadcast received`,
-              actor,
-              `channel: tenant:${payload.tenant_id}:stream`,
-            ),
-          );
-        });
-        socket.on("mutation:collision", (payload) =>
-          addLog(
-            makeLog(
-              "collision",
-              `mutation:collision — entity: ${payload.entity_id?.slice(0, 8)}…`,
-              actor,
-              `stale_version: ${payload.stale_version}`,
-            ),
-          ),
-        );
-        socket.on("disconnect", (reason) =>
-          addLog(
-            makeLog("telemetry", `WebSocket disconnected: ${reason}`, actor),
-          ),
-        );
-        return socket;
-      }
-
-      aliceSocketRef.current = makeSocket(aliceToken, "alice");
-      bobSocketRef.current = makeSocket(bobToken, "bob");
-    },
-    [addLog],
-  );
-
-  // ─── Load profile ─────────────────────────────────────────────────────────
-
-  const loadProfile = useCallback(
-    async (p: WorkspaceProfile) => {
-      setLoading(true);
-      setEntities([]);
-      setBlueprint(null);
-      setTokens(null);
-      setAliceCollisionOutcome("idle");
-      setBobCollisionOutcome("idle");
-      setCollisionEntityId(undefined);
-
+    socket.on("connect", () =>
       addLog(
         makeLog(
           "info",
-          `Loading workspace: ${p.label}`,
-          "system",
-          `tenant: ${p.tenantId}`,
+          `WebSocket authenticated — tenant: ${tenantId}`,
+          actor,
+          `socket_id: ${socket.id}`,
+        ),
+      ),
+    );
+
+    socket.on("connect_error", (err) =>
+      addLog(
+        makeLog("error", `WebSocket connection failed: ${err.message}`, actor),
+      ),
+    );
+
+    socket.on("entity:updated", (payload: WsEntityUpdatedPayload) => {
+      // Update entity in the map for this profile
+      setEntityMap((prev) => {
+        const next = new Map(prev);
+        const current = next.get(profileId) ?? [];
+        next.set(
+          profileId,
+          current.map((e) =>
+            e.id === payload.entity_id
+              ? {
+                  ...e,
+                  currentState: payload.new_state,
+                  version: payload.version,
+                  attributes: { ...e.attributes, ...payload.attributes },
+                  updatedAt: payload.timestamp,
+                }
+              : e,
+          ),
+        );
+        return next;
+      });
+
+      addLog(
+        makeLog(
+          "success",
+          `entity:updated — ${payload.entity_id.slice(0, 8)}… ${payload.old_state} → ${payload.new_state}`,
+          actor,
+          `v${payload.version} · actor: ${payload.actor_id}`,
         ),
       );
-      addLog(makeLog("info", "Issuing tokens for Alice + Bob…", "system"));
+      addLog(
+        makeLog(
+          "telemetry",
+          `Redis pub/sub broadcast received`,
+          actor,
+          `channel: tenant:${payload.tenant_id}:stream`,
+        ),
+      );
+    });
 
-      let aliceToken: string;
-      let bobToken: string;
+    socket.on("mutation:collision", (payload) =>
+      addLog(
+        makeLog(
+          "collision",
+          `mutation:collision — entity: ${payload.entity_id?.slice(0, 8)}…`,
+          actor,
+          `stale_version: ${payload.stale_version}`,
+        ),
+      ),
+    );
 
+    socket.on("disconnect", (reason) =>
+      addLog(makeLog("telemetry", `WebSocket disconnected: ${reason}`, actor)),
+    );
+
+    return socket;
+  }
+
+  // ─── Boot a single profile ────────────────────────────────────────────────
+
+  async function bootProfile(p: WorkspaceProfile): Promise<void> {
+    addLog(
+      makeLog(
+        "info",
+        `Booting workspace: ${p.label}`,
+        "system",
+        `tenant: ${p.tenantId}`,
+      ),
+    );
+
+    // 1. Issue tokens
+    let tokens: ProfileTokens;
+    try {
+      const [a, b] = await Promise.all([
+        issueToken(p.apiKey, "dispatcher", "alice"),
+        issueToken(p.apiKey, "dispatcher", "bob"),
+      ]);
+      tokens = { alice: a, bob: b };
+      addLog(makeLog("success", `${p.label} — tokens issued`, "system"));
+    } catch (err: any) {
+      addLog(
+        makeLog(
+          "error",
+          `${p.label} — token issuance failed: ${err.message}`,
+          "system",
+        ),
+      );
+      return;
+    }
+
+    // 2. Connect sockets
+    const aliceSocket = makeSocket(tokens.alice, "alice", p.id, p.tenantId);
+    const bobSocket = makeSocket(tokens.bob, "bob", p.id, p.tenantId);
+
+    // 3. Fetch blueprint + entities in parallel
+    const [existingBlueprint, existing] = await Promise.all([
+      fetchActiveBlueprint(tokens.alice),
+      fetchEntities(tokens.alice, p.entityType),
+    ]);
+
+    // 4. Handle blueprint
+    let blueprint: BlueprintConfig;
+    if (existingBlueprint) {
+      blueprint = existingBlueprint;
+      addLog(
+        makeLog(
+          "telemetry",
+          `${p.label} — blueprint fetched (${blueprint.transitions.length} transitions)`,
+          "system",
+        ),
+      );
+    } else {
+      addLog(makeLog("info", `${p.label} — uploading blueprint…`, "system"));
       try {
-        const [a, b] = await Promise.all([
-          issueToken(p.apiKey, "dispatcher", "alice"),
-          issueToken(p.apiKey, "dispatcher", "bob"),
-        ]);
-        aliceToken = a;
-        bobToken = b;
-        setTokens({ alice: aliceToken, bob: bobToken });
-        addLog(
-          makeLog(
-            "success",
-            "Tokens issued — alice + bob authenticated",
-            "system",
-          ),
-        );
+        await uploadBlueprint(tokens.alice, p.blueprint);
+        blueprint = p.blueprint;
+        addLog(makeLog("success", `${p.label} — blueprint uploaded`, "system"));
       } catch (err: any) {
         addLog(
-          makeLog("error", `Token issuance failed: ${err.message}`, "system"),
+          makeLog(
+            "error",
+            `${p.label} — blueprint upload failed: ${err.message}`,
+            "system",
+          ),
         );
-        setLoading(false);
-        return;
+        blueprint = p.blueprint; // fall back to static config
       }
+    }
 
-      connectSockets(p, aliceToken, bobToken);
-
-      const existingBlueprint = await fetchActiveBlueprint(aliceToken);
-      if (existingBlueprint) {
-        setBlueprint(existingBlueprint);
-        addLog(
-          makeLog(
-            "telemetry",
-            `Blueprint fetched — ${existingBlueprint.transitions.length} transitions`,
-            "system",
-          ),
-        );
-      } else {
-        addLog(
-          makeLog(
-            "info",
-            "No blueprint found — uploading pre-baked config…",
-            "system",
-          ),
-        );
-        try {
-          await uploadBlueprint(aliceToken, p.blueprint);
-          setBlueprint(p.blueprint);
-          addLog(
-            makeLog(
-              "success",
-              "Blueprint uploaded and cached in Redis",
-              "system",
-            ),
-          );
-        } catch (err: any) {
-          addLog(
-            makeLog(
-              "error",
-              `Blueprint upload failed: ${err.message}`,
-              "system",
-            ),
-          );
-        }
-      }
-
-      const existing = await fetchEntities(aliceToken, p.entityType);
-      if (existing.length > 0) {
-        setEntities(existing);
-        addLog(
-          makeLog(
-            "telemetry",
-            `Hydrated ${existing.length} entities from database`,
-            "system",
-          ),
-        );
-      } else {
-        addLog(makeLog("info", "Seeding demo entities…", "system"));
-        const seeded: WorkflowEntity[] = [];
-        for (const seed of p.seedEntities) {
+    // 5. Handle entities
+    let entities: WorkflowEntity[];
+    if (existing.length > 0) {
+      entities = existing;
+      addLog(
+        makeLog(
+          "telemetry",
+          `${p.label} — hydrated ${entities.length} entities`,
+          "system",
+        ),
+      );
+    } else {
+      addLog(makeLog("info", `${p.label} — seeding entities…`, "system"));
+      const seeded = await Promise.all(
+        p.seedEntities.map(async (seed) => {
           try {
             const e = await createEntity(
-              aliceToken,
+              tokens.alice,
               p.entityType,
               seed.initial_state,
               seed.attributes,
             );
-            seeded.push(e);
-            addLog(
-              makeLog(
-                "success",
-                `Entity created — ${e.id.slice(0, 8)}… state: ${e.currentState}`,
-                "system",
-              ),
-            );
-          } catch (err: any) {
-            addLog(makeLog("error", `Seed failed: ${err.message}`, "system"));
+            return e;
+          } catch {
+            return null;
           }
-        }
-        setEntities(seeded);
-      }
+        }),
+      );
+      entities = seeded.filter(Boolean) as WorkflowEntity[];
+      addLog(
+        makeLog(
+          "success",
+          `${p.label} — seeded ${entities.length} entities`,
+          "system",
+        ),
+      );
+    }
 
-      setLoading(false);
-    },
-    [connectSockets, addLog],
-  );
+    // 6. Store in cache
+    cacheRef.current.set(p.id, {
+      tokens,
+      blueprint,
+      entities,
+      aliceSocket,
+      bobSocket,
+    });
 
-  function handleProfileChange(p: WorkspaceProfile) {
-    setProfile(p);
-    loadProfile(p);
+    // 7. Update entity map for reactivity
+    setEntityMap((prev) => {
+      const next = new Map(prev);
+      next.set(p.id, entities);
+      return next;
+    });
+
+    // 8. Mark this profile as ready
+    setReadyProfiles((prev) => new Set([...prev, p.id]));
   }
 
+  // ─── Boot all profiles on mount ───────────────────────────────────────────
+
   useEffect(() => {
-    loadProfile(DEFAULT_PROFILE);
+    async function bootAll() {
+      setInitializing(true);
+      addLog(makeLog("info", "Booting all workspaces in parallel…", "system"));
+
+      // Boot all three profiles simultaneously
+      await Promise.all(PROFILES.map((p) => bootProfile(p)));
+
+      addLog(makeLog("success", "All workspaces ready", "system"));
+      setInitializing(false);
+    }
+
+    bootAll();
+
     return () => {
-      aliceSocketRef.current?.disconnect();
-      bobSocketRef.current?.disconnect();
+      // Disconnect all sockets on unmount
+      cacheRef.current.forEach((cache) => {
+        cache.aliceSocket.disconnect();
+        cache.bobSocket.disconnect();
+      });
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // ─── Switching profiles is now instant — just update activeProfileId ──────
+
+  function handleProfileChange(p: WorkspaceProfile) {
+    setActiveProfileId(p.id);
+    setAliceCollisionOutcome("idle");
+    setBobCollisionOutcome("idle");
+    setCollisionEntityId(undefined);
+    addLog(makeLog("info", `Switched to workspace: ${p.label}`, "system"));
+  }
+
+  // ─── Derived active profile data ──────────────────────────────────────────
+
+  const activeProfile = PROFILES.find((p) => p.id === activeProfileId)!;
+  const activeCache = cacheRef.current.get(activeProfileId);
+  const activeEntities = entityMap.get(activeProfileId) ?? [];
+  const activeBlueprint = activeCache?.blueprint ?? null;
+  const activeTokens = activeCache?.tokens ?? null;
+  const activeProfileReady = readyProfiles.has(activeProfileId);
 
   // ─── Manual mutation ──────────────────────────────────────────────────────
 
@@ -319,10 +368,11 @@ export default function DashboardPage() {
     rule: TransitionRule,
     payload: Record<string, unknown>,
   ) {
-    if (!mutateTarget || !tokens) return;
+    if (!mutateTarget || !activeTokens) return;
     const { entity, actor } = mutateTarget;
     setMutateTarget(null);
-    const token = actor === "alice" ? tokens.alice : tokens.bob;
+
+    const token = actor === "alice" ? activeTokens.alice : activeTokens.bob;
 
     addLog(
       makeLog(
@@ -373,17 +423,22 @@ export default function DashboardPage() {
   // ─── Collision simulation ─────────────────────────────────────────────────
 
   async function handleSimulateCollision() {
-    if (!tokens || !blueprint) return;
+    if (!activeTokens || !activeBlueprint) return;
 
-    // Re-fetch entities fresh so we always have the latest version numbers
-    const freshEntities = await fetchEntities(tokens.alice, profile.entityType);
+    const freshEntities = await fetchEntities(
+      activeTokens.alice,
+      activeProfile.entityType,
+    );
     if (freshEntities.length > 0) {
-      setEntities(freshEntities);
+      setEntityMap((prev) => {
+        const next = new Map(prev);
+        next.set(activeProfileId, freshEntities);
+        return next;
+      });
     }
 
-    // Find first entity with an available transition from fresh data
     const target = freshEntities.find((e) =>
-      blueprint.transitions.some(
+      activeBlueprint.transitions.some(
         (t) =>
           t.from_state === e.currentState &&
           t.allowed_roles.includes("dispatcher"),
@@ -394,14 +449,14 @@ export default function DashboardPage() {
       addLog(
         makeLog(
           "error",
-          "No entity in a mutable state — all entities may be at terminal states",
+          "No entity in a dispatcher-accessible state — all remaining transitions require a different role",
           "system",
         ),
       );
       return;
     }
 
-    const availableRule = blueprint.transitions.find(
+    const availableRule = activeBlueprint.transitions.find(
       (t) =>
         t.from_state === target.currentState &&
         t.allowed_roles.includes("dispatcher"),
@@ -415,6 +470,7 @@ export default function DashboardPage() {
 
     const alicePayload: Record<string, unknown> = {};
     const bobPayload: Record<string, unknown> = {};
+
     Object.entries(availableRule.payload_schema).forEach(([key, schema]) => {
       if (schema.type === "string") {
         alicePayload[key] = key.includes("driver")
@@ -443,7 +499,7 @@ export default function DashboardPage() {
 
     const [aliceResult, bobResult] = await Promise.all([
       mutateEntity(
-        tokens.alice,
+        activeTokens.alice,
         target.id,
         availableRule.from_state,
         availableRule.to_state,
@@ -451,7 +507,7 @@ export default function DashboardPage() {
         alicePayload,
       ),
       mutateEntity(
-        tokens.bob,
+        activeTokens.bob,
         target.id,
         availableRule.from_state,
         availableRule.to_state,
@@ -526,9 +582,10 @@ export default function DashboardPage() {
     }, 4000);
   }
 
-  const availableTransitions = blueprint?.transitions ?? [];
+  const availableTransitions = activeBlueprint?.transitions ?? [];
+  const isLoading = initializing || !activeProfileReady;
 
-  // Render
+  // ─── Render ───────────────────────────────────────────────────────────────
 
   return (
     <div
@@ -545,7 +602,6 @@ export default function DashboardPage() {
       >
         {/* Left */}
         <div className="flex items-center gap-2 sm:gap-4 min-w-0">
-          {/* Logo */}
           <div className="flex items-center gap-2 shrink-0">
             <div className="flex items-center justify-center w-7 h-7 rounded-lg bg-linear-to-br from-indigo-500/30 to-violet-500/20 border border-indigo-500/20">
               <GitBranch size={13} className="text-indigo-400" />
@@ -562,31 +618,40 @@ export default function DashboardPage() {
 
           <div className="w-px h-6 bg-white/6 hidden sm:block" />
 
-          {/* Profile selector — hidden on very small screens, shown from sm */}
           <div className="hidden sm:block">
             <ProfileSelector
-              active={profile}
+              active={activeProfile}
               onChange={handleProfileChange}
-              loading={loading}
+              loading={initializing}
             />
           </div>
         </div>
 
         {/* Right */}
         <div className="flex items-center gap-2">
+          {/* Boot progress indicator */}
+          {initializing && (
+            <div className="hidden sm:flex items-center gap-1.5 px-2 py-1 rounded-md bg-white/2 border border-white/5">
+              <Loader2 size={9} className="text-amber-400 animate-spin" />
+              <span className="font-mono text-[9px] text-slate-500">
+                booting {readyProfiles.size}/{PROFILES.length} workspaces…
+              </span>
+            </div>
+          )}
+
           {/* Token status */}
           <div className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-white/2 border border-white/5">
-            {tokens ? (
+            {activeTokens ? (
               <CheckCircle2 size={10} className="text-emerald-400" />
-            ) : loading ? (
+            ) : initializing ? (
               <Loader2 size={10} className="text-amber-400 animate-spin" />
             ) : (
               <AlertCircle size={10} className="text-rose-400" />
             )}
             <span className="font-mono text-[9px] text-slate-500 hidden sm:block">
-              {tokens
+              {activeTokens
                 ? "authenticated"
-                : loading
+                : initializing
                   ? "authenticating…"
                   : "auth failed"}
             </span>
@@ -613,18 +678,17 @@ export default function DashboardPage() {
         </div>
       </header>
 
-      {/* Profile selector — mobile only, below header */}
+      {/* Profile selector — mobile only */}
       <div className="sm:hidden shrink-0 px-3 py-2 border-b border-white/5 bg-[#0a0f1a]">
         <ProfileSelector
-          active={profile}
+          active={activeProfile}
           onChange={handleProfileChange}
-          loading={loading}
+          loading={initializing}
         />
       </div>
 
       {/* Main */}
       <div className="flex-1 flex min-h-0 overflow-hidden relative">
-        {/* Blueprint sidebar — desktop always visible, mobile as drawer */}
         {/* Mobile backdrop */}
         {blueprintOpen && (
           <div
@@ -633,20 +697,17 @@ export default function DashboardPage() {
           />
         )}
 
-        {/* Sidebar itself */}
+        {/* Blueprint sidebar */}
         <aside
           className={[
             "flex-col min-h-0 overflow-hidden bg-[#0a0f1a] border-r border-white/5",
-            // Desktop: always shown as sidebar
             "lg:flex lg:relative lg:w-60 lg:z-auto lg:translate-x-0",
-            // Mobile: fixed drawer sliding in from left
             "fixed top-0 left-0 h-full z-40 w-72 flex transition-transform duration-300",
             blueprintOpen
               ? "translate-x-0"
               : "-translate-x-full lg:translate-x-0",
           ].join(" ")}
         >
-          {/* Mobile drawer header */}
           <div className="lg:hidden flex items-center justify-between px-4 py-3 border-b border-white/6">
             <span className="font-sans font-semibold text-sm text-slate-200">
               Blueprint
@@ -658,31 +719,29 @@ export default function DashboardPage() {
               <X size={13} />
             </button>
           </div>
-
           <BlueprintInspector
-            config={blueprint}
-            loading={loading}
-            tenantId={profile.tenantId}
+            config={activeBlueprint}
+            loading={isLoading}
+            tenantId={activeProfile.tenantId}
           />
         </aside>
 
-        {/* Center content */}
+        {/* Center */}
         <main className="flex-1 flex flex-col min-h-0 min-w-0 overflow-hidden">
-          {/* Collision bar */}
           <CollisionSimulator
             onSimulate={handleSimulateCollision}
             running={collisionRunning}
-            disabled={loading || !tokens}
-            hasEntities={entities.length > 0}
+            disabled={isLoading || !activeTokens}
+            hasEntities={activeEntities.length > 0}
           />
 
-          {/* Desktop: side-by-side Alice / Bob columns */}
+          {/* Desktop: side-by-side columns */}
           <div className="hidden md:flex flex-1 min-h-0 overflow-hidden">
             <div className="flex-1 border-r border-white/5 min-h-0 flex flex-col overflow-hidden">
               <EntityTable
-                entities={entities}
+                entities={activeEntities}
                 actor="alice"
-                loading={loading}
+                loading={isLoading}
                 collisionEntityId={collisionEntityId}
                 collisionOutcome={aliceCollisionOutcome}
                 onMutate={(entity) =>
@@ -693,9 +752,9 @@ export default function DashboardPage() {
             </div>
             <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
               <EntityTable
-                entities={entities}
+                entities={activeEntities}
                 actor="bob"
-                loading={loading}
+                loading={isLoading}
                 collisionEntityId={collisionEntityId}
                 collisionOutcome={bobCollisionOutcome}
                 onMutate={(entity) => setMutateTarget({ entity, actor: "bob" })}
@@ -704,9 +763,8 @@ export default function DashboardPage() {
             </div>
           </div>
 
-          {/* Mobile: tabbed Alice / Bob */}
+          {/* Mobile: tabbed */}
           <div className="flex md:hidden flex-col flex-1 min-h-0 overflow-hidden">
-            {/* Tab bar */}
             <div className="shrink-0 flex border-b border-white/5">
               {(["alice", "bob"] as const).map((actor) => {
                 const isActive = mobileTab === actor;
@@ -741,14 +799,12 @@ export default function DashboardPage() {
                 );
               })}
             </div>
-
-            {/* Active panel */}
             <div className="flex-1 min-h-0 overflow-hidden">
               {mobileTab === "alice" ? (
                 <EntityTable
-                  entities={entities}
+                  entities={activeEntities}
                   actor="alice"
-                  loading={loading}
+                  loading={isLoading}
                   collisionEntityId={collisionEntityId}
                   collisionOutcome={aliceCollisionOutcome}
                   onMutate={(entity) =>
@@ -758,9 +814,9 @@ export default function DashboardPage() {
                 />
               ) : (
                 <EntityTable
-                  entities={entities}
+                  entities={activeEntities}
                   actor="bob"
-                  loading={loading}
+                  loading={isLoading}
                   collisionEntityId={collisionEntityId}
                   collisionOutcome={bobCollisionOutcome}
                   onMutate={(entity) =>
@@ -778,10 +834,10 @@ export default function DashboardPage() {
       <Terminal logs={logs} onClear={clearLogs} />
 
       {/* Mutate modal */}
-      {mutateTarget && blueprint && (
+      {mutateTarget && activeBlueprint && (
         <MutateModal
           entity={mutateTarget.entity}
-          transitions={blueprint.transitions}
+          transitions={activeBlueprint.transitions}
           actor={mutateTarget.actor}
           onConfirm={handleMutateConfirm}
           onClose={() => setMutateTarget(null)}
