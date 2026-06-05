@@ -36,7 +36,7 @@ export function CollisionSimulator({
         onClick={onSimulate}
         disabled={isDisabled}
         className={clsx(
-          "relative group flex items-center justify-center gap-2.5 w-full sm:w-auto px-5 py-2 rounded-lg font-sans font-medium text-xs transition-all duration-200 border overflow-hidden",
+          "relative group flex items-center lg:cursor-pointer justify-center gap-2.5 w-full sm:w-auto px-5 py-2 rounded-lg font-sans font-medium text-xs transition-all duration-200 border overflow-hidden",
           running
             ? "bg-amber-500/10 border-amber-500/30 text-amber-300 cursor-wait"
             : isDisabled

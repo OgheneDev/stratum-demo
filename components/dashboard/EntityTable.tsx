@@ -281,7 +281,7 @@ export function EntityTable({
                       <button
                         onClick={() => onMutate(entity)}
                         className={clsx(
-                          "flex items-center gap-1 font-mono text-[10px] px-2 py-1.5 rounded-md border transition-all duration-150",
+                          "flex items-center gap-1 lg:cursor-pointer font-mono text-[10px] px-2 py-1.5 rounded-md border transition-all duration-150",
                           "bg-white/3 border-white/8 text-slate-500",
                           // Always visible on touch, hover-reveal on desktop
                           "sm:opacity-0 sm:group-hover:opacity-100",

@@ -110,7 +110,7 @@ export function MutateModal({
           </div>
           <button
             onClick={onClose}
-            className="flex items-center justify-center w-7 h-7 rounded-lg bg-white/4 hover:bg-white/8 border border-white/6 text-slate-500 hover:text-slate-300 transition-colors"
+            className="flex items-center lg:cursor-pointer justify-center w-7 h-7 rounded-lg bg-white/4 hover:bg-white/8 border border-white/6 text-slate-500 hover:text-slate-300 transition-colors"
           >
             <X size={13} />
           </button>
@@ -236,7 +236,7 @@ export function MutateModal({
         <div className="flex items-center justify-end gap-2 px-4 sm:px-5 py-3.5 border-t border-white/6 bg-white/1">
           <button
             onClick={onClose}
-            className="font-sans text-xs px-3.5 py-2 text-slate-500 hover:text-slate-300 transition-colors rounded-lg hover:bg-white/4"
+            className="font-sans text-xs px-3.5 py-2 lg:cursor-pointer text-slate-500 hover:text-slate-300 transition-colors rounded-lg hover:bg-white/4"
           >
             Cancel
           </button>
@@ -244,7 +244,7 @@ export function MutateModal({
             onClick={handleSubmit}
             disabled={!selectedRule}
             className={clsx(
-              "flex items-center gap-1.5 font-sans font-medium text-xs px-4 py-2 rounded-lg border transition-all duration-150 disabled:opacity-40 disabled:cursor-not-allowed",
+              "flex items-center gap-1.5 font-sans lg:cursor-pointer font-medium text-xs px-4 py-2 rounded-lg border transition-all duration-150 disabled:opacity-40 disabled:cursor-not-allowed",
               submitBg,
             )}
           >
