@@ -31,28 +31,51 @@ There is no mock layer. Every HTTP request and WebSocket event targets the real 
 ## Project Structure
 
 ```
-src/
 ├── app/
-│   ├── page.tsx          # Main dashboard — full orchestration layer
-│   ├── layout.tsx        # Root layout with font imports
-│   └── globals.css       # Base styles + scrollbar + scanline overlay
+│   ├── page.tsx                      # Main dashboard — full orchestration layer
+│   ├── layout.tsx                    # Root layout with font imports
+│   └── globals.css                   # Base styles + scrollbar + scanline overlay
+│
 ├── components/
 │   ├── dashboard/
-│   │   ├── ProfileSelector.tsx   # Industry workspace switcher
-│   │   ├── EntityTable.tsx       # Per-operator entity list with state badges
-│   │   └── MutateModal.tsx       # Transition picker with payload field inputs
+│   │   ├── DashboardPage.tsx         # Main dashboard orchestrator (~120 lines)
+│   │   ├── ProfileSelector.tsx       # Industry workspace switcher
+│   │   ├── EntityTable.tsx           # Per-operator entity list with state badges
+│   │   ├── MutateModal.tsx           # Transition picker with payload field inputs
+│   │   ├── TopBar.tsx                # Header with status indicators
+│   │   ├── MobileProfileSelector.tsx # Mobile-friendly profile switcher
+│   │   ├── DesktopLayout.tsx         # Desktop side-by-side entity tables
+│   │   ├── MobileLayout.tsx          # Mobile tabbed entity tables
+│   │   └── BlueprintInspectorWrapper.tsx # Wrapper for blueprint sidebar
+│   │
 │   ├── inspector/
-│   │   └── BlueprintInspector.tsx  # Live blueprint contract side panel
+│   │   └── BlueprintInspector.tsx    # Live blueprint contract side panel
+│   │
 │   ├── collision/
-│   │   └── CollisionSimulator.tsx  # Race condition trigger button
+│   │   └── CollisionSimulator.tsx    # Race condition trigger button
+│   │
 │   └── terminal/
-│       └── Terminal.tsx          # Append-only telemetry log console
+│       └── Terminal.tsx              # Append-only telemetry log console
+│
+├── hooks/
+│   ├── useDashboardState.ts          # Dashboard state management
+│   └── useWebSocketManager.ts        # WebSocket connection management
+│
+├── services/
+│   ├── profileBootService.ts         # Profile boot logic (tokens, sockets, entities)
+│   └── collisionService.ts           # Collision simulation logic
+│
 ├── lib/
-│   ├── profiles.ts       # Static industry workspace configurations
-│   ├── api.ts            # All HTTP calls to the Stratum backend
-│   └── logger.ts         # Log entry factory + timestamp formatter
-└── types/
-    └── index.ts          # Shared TypeScript types
+│   ├── profiles.ts                   # Static industry workspace configurations
+│   ├── api.ts                        # All HTTP calls to the Stratum backend
+│   └── logger.ts                     # Log entry factory + timestamp formatter
+│
+├── types/
+│   ├── index.ts                      # Shared TypeScript types (existing)
+│   └── dashboard.ts                  # Dashboard-specific types (ProfileCache, MutateTarget, etc.)
+│
+└── utils/
+    └── constants.ts                  # Constants like WS_URL, STATE_COLORS (optional)
 ```
 
 ---
