@@ -75,7 +75,7 @@ There is no mock layer. Every HTTP request and WebSocket event targets the real 
 │   └── dashboard.ts                  # Dashboard-specific types (ProfileCache, MutateTarget, etc.)
 │
 └── utils/
-    └── constants.ts                  # Constants like WS_URL, STATE_COLORS (optional)
+    └── constants.ts                  # Constants like WS_URL, STATE_COLORS
 ```
 
 ---
